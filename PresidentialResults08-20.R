@@ -15,6 +15,9 @@ df20 = read.csv("https://raw.githubusercontent.com/tonmcg/US_County_Level_Electi
 df8.16 = read.csv("https://raw.githubusercontent.com/tonmcg/US_County_Level_Election_Results_08-20/master/US_County_Level_Presidential_Results_08-16.csv")
 ecvotes = read.csv("Electoral_College.csv")
 
+##Set Color Scheme
+policolor<-c("blue","cadetblue1","#0000FF","#F6BDC0","#DC1C13")
+
 ##Add Winner to 2020 and 2016 data
 #df20win<- data.frame(df20,win="GOP")
 #df20win$win[df20win$diff<0] <-"DEM"
@@ -71,14 +74,13 @@ load(url("https://github.com/mgimond/ES218/blob/gh-pages/Data/counties48.RData?r
 cnty2<- cnty%>%
   left_join(county.fips,by=c("ID"="polyname"))
 
-
-head(dftotalmap)
 ##Build County Map Data Sets
-dftotalmap<-dftotal%>%
-  select(county_fips,win2020_pct)
+dftotalmap<-dftotal
 cnty2.df1<- cnty2%>%
   left_join(dftotalmap, by=c("fips"= "county_fips"))
 
+
+## Filter Electoral College Results down to 2008-2020 Range
 ecvoterange<-ecvotes%>%
   filter(Year>=2008)%>%
   spread(Year,Votes)%>%
@@ -87,78 +89,77 @@ ecvoterange<-ecvotes%>%
          ec_2012="2012",
          ec_2008="2008")
 
+### Create Total Votes Per State Data Frame
+dftotstate<- dftotal%>%
+  group_by(state_name)%>%
+  summarise_at(vars(total_2020,total_2016,total_2012,total_2008),list(name=sum))
 
 
-###County Vote Margin PCt
+dftotstate<-rename(dftotstate,st_total_2020=total_2020_name,
+                   st_total_2016=total_2016_name,
+                   st_total_2012=total_2012_name,
+                   st_total_2008=total_2008_name)
+
+###Map County Vote Margin PCt
 tm_shape(cnty2.df1) + tm_fill(col = "win2020_pct", palette = "Reds") +
   tm_legend(outside = TRUE) 
 
+head (cnty2.df1)
+
 ###County Margin County Vote Margin
-ggplot(cnty2.df1) + geom_sf(aes(fill=diff_2020))+
-  scale_fill_stepsn(colors=c("#2b2b87","#551199","#ff3d40"),
-  breaks=c(mn1,qnt1,0,stdv,mx1)                    )+labs(title = "County Vote Margin")
+
 mx1<-max(dftotalmap$diff_2020)
 mn1<-min(dftotalmap$diff_2020)
 mx2<-quantile(dftotal$diff_2020)
 stdv<-round(sd(dftotal$diff_2020),0)
 qnt1<-0-stdv
 
+ggplot(cnty2.df1) + geom_sf(aes(fill=diff_2020))+
+  scale_fill_stepsn(colors=c("#2b2b87","#551199","#ff3d40"),
+  breaks=c(mn1,qnt1,0,stdv,mx1))+labs(title = "County Vote Margin")
+
+
 ggplot(cnty2.df1) + geom_sf(aes(fill=win2020_pct))+
   scale_fill_stepsn(colors=policolor,
   breaks=c(-.75,-.25,0,.25,.75))+labs(title = "County Vote Margin")
 
-qnt1cnty2.df1
-summary(cnty2.df1)
 
-policolor<-c("blue","cadetblue1","#0000FF","#F6BDC0","#DC1C13")
-brk<-c(qt.values)
+#AUto Breaks 
+qt<- as.vector(quantile(cnty2.df1$diff_2020, na.rm=TRUE))
+qt1<- c(qt[1],0,qt[2:5])
 
 ggplot(cnty2.df1) + geom_sf(aes(fill=diff_2020))+
   scale_fill_stepsn(colors=policolor,
   breaks=qt1)+labs(title = "County Vote Margin")
 
-qt<- as.vector(quantile(cnty2.df1$diff_2020, na.rm=TRUE))
-qt1<- c(qt[1],0,qt[2:5])
 
-dftotstate<- dftotal%>%
-  group_by(state_name)%>%
-  summarise_at(vars(total_2020,total_2016,total_2012,total_2008),list(name=sum))
-dftotstate
+#Plot of Win% vs Vote Difference
 
-plot(cnty2.df1$diff_2020,cnty2.df1$win2020_pct)
-head(ecvotes)
+plot(cnty2.df1$diff_2020,cnty2.df1$win2020_pct, log="x")
 
-head(ecvoterange)
-
-head(dftotstate)
-dftotstate<-rename(dftotstate,st_total_2020=total_2020_name,
-       st_total_2016=total_2016_name,
-       st_total_2012=total_2012_name,
-       st_total_2008=total_2008_name
-       )
-
+## Create New Mapping Dataset, Add Electoral College per state
 cnty2.df2<-cnty2.df1%>%
     left_join(ecvoterange,by=c("state_name"="State"))%>%
     left_join(dftotstate, by="state_name")
-head(cnty2.df2)
 
+### Third Dataset  Adding Electoral College Factor (Approx electoral college votes by county) 
 cnty2.df3<- cnty2.df2%>%
   mutate(ec_factor_2020= (diff_2020/st_total_2020)*ec_2020 )%>%
   filter(state_name!="DC")
-head(cnty2.df3)
-summary(cnty2.df3$ec_factor_2020)
 
-qt<- as.vector(quantile(cnty2.df3$ec_factor_2020, na.rm=TRUE))
-qt1<- c(qt[1],0,qt[2:5])
 
+
+qt2<- as.vector(quantile(cnty2.df3$ec_factor_2020, na.rm=TRUE))
+qt3<- c(qt[1],0,qt[2:5])
+
+### Map
 ggplot(cnty2.df3) + geom_sf(aes(fill=ec_factor_2020))+
   scale_fill_stepsn(colors=policolor,
-                    breaks=qt1)+labs(title = "County Vote Margin")
+                    breaks=qt3)+labs(title = "County Vote Margin")
 
+
+##Map for County WIn
 ggplot(cnty2.df3)+
   geom_sf(aes(fill=win2020))+
   scale_color_manual(values =policolor)
 
-cnty2.df3%>%
-  plot(x="diff_2020",y="total_2020")
-plot(cnty2.df3$total_2020,cnty2.df3$diff_2020,xlab = "Total Votes",ylab = "Total Difference")
