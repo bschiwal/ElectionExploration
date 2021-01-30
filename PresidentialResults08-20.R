@@ -154,12 +154,12 @@ qt3<- c(qt[1],0,qt[2:5])
 
 ### Map
 ggplot(cnty2.df3) + geom_sf(aes(fill=ec_factor_2020))+
-  scale_fill_stepsn(colors=policolor,
-                    breaks=qt3)+labs(title = "County Vote Margin")
+  scale_fill_stepsn(colors=policolor, breaks=qt3)+
+  labs(title = "County Vote Margin")+ scale_alpha(cnty2.df3$total_2020)
 
 
 ##Map for County WIn
 ggplot(cnty2.df3)+
-  geom_sf(aes(fill=win2020))+
-  scale_color_manual(values =policolor)
+  geom_sf(aes(fill=win2008_pct)+scale_alpha(total_2008))
 
+                     
