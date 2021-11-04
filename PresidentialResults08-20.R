@@ -4,10 +4,13 @@ devtools::install_github("UrbanInstitute/urbnmapr")
 library("tidyverse")
 library("githubinstall")
 library("dplyr")
+library(ggplot2)
 library(urbnmapr)
 library(sf)
 library(tmap)
-
+library(biscale)
+library(cowplot)
+library(BBmisc)
 
 ##Load Data####
 df20 = read.csv("https://raw.githubusercontent.com/tonmcg/US_County_Level_Election_Results_08-20/master/2020_US_County_Level_Presidential_Results.csv")
@@ -81,6 +84,7 @@ cnty2.df1<- cnty2%>%
 
 
 ## Filter Electoral College Results down to 2008-2020 Range
+ecvotes<-read.csv("Electoral_College.csv")
 ecvoterange<-ecvotes%>%
   filter(Year>=2008)%>%
   spread(Year,Votes)%>%
@@ -99,6 +103,18 @@ dftotstate<-rename(dftotstate,st_total_2020=total_2020_name,
                    st_total_2016=total_2016_name,
                    st_total_2012=total_2012_name,
                    st_total_2008=total_2008_name)
+
+
+## Create New Mapping Dataset, Add Electoral College per state
+cnty2.df2<-cnty2.df1%>%
+  left_join(ecvoterange,by=c("state_name"="State"))%>%
+  left_join(dftotstate, by="state_name")
+
+### Third Dataset  Adding Electoral College Factor (Approx electoral college votes by county) 
+cnty2.df3<- cnty2.df2%>%
+  mutate(ec_factor_2020= (diff_2020/st_total_2020)*ec_2020 )%>%
+  filter(state_name!="DC")
+
 
 ###Map County Vote Margin PCt
 tm_shape(cnty2.df1) + tm_fill(col = "win2020_pct", palette = "Reds") +
@@ -147,19 +163,110 @@ cnty2.df3<- cnty2.df2%>%
   mutate(ec_factor_2020= (diff_2020/st_total_2020)*ec_2020 )%>%
   filter(state_name!="DC")
 
+###Create Bin Column in Dataframe
+
+cnty2.df4<- cnty2.df3 %>%
+  mutate(diff_2020_bin= case_when(
+    diff_2020 >0 &diff_2020<1000~1,
+    diff_2020 >1000 &diff_2020<10000~1000,
+    diff_2020 >10000 &diff_2020<100000~10000,
+    diff_2020 >100000 ~100000,
+    diff_2020 <0 &diff_2020>-1000~-1,
+    diff_2020 <1000 &diff_2020>-10000~-1000,
+    diff_2020 <10000 &diff_2020>-100000~-10000,
+    diff_2020 <100000 ~-100000,
+    TRUE ~0
+  ))
+
+
+###CReate Biclass Data
+biclass_data <- bi_class(cnty2.df4, x = gop_2020, y = dem_2020, style = "quantile", dim = 3)
+
+
+##Bivariate Map###
+ map<-ggplot()+ geom_sf(data = biclass_data, mapping = aes(fill = bi_class), color = "white", show.legend = FALSE) +
+  bi_scale_fill(pal = "DkViolet", dim = 3) +
+  labs(
+    title = "Presidential Vote Distribution",
+    subtitle = "2020 DEM and GOP",
+    caption = "Created by @bschiwal"
+  ) +
+  bi_theme(base_size = 18)
+ legend<-  bi_legend(pal = "DkViolet",
+        dim = 3,
+        xlab = "More GOP",
+        ylab = "More DEM",
+        size = 7)
+ finalPlot <- ggdraw() +
+   draw_plot(map, 0, 0, 1, 1) +
+   draw_plot(legend, 0.03, 0.15, 0.15, 0.15)
+ 
+ggsave("2020USvotemap.jpg",units="in",height=6,width=8,dpi=300)
+finalPlot
+dev.off()
 
 
 qt2<- as.vector(quantile(cnty2.df3$ec_factor_2020, na.rm=TRUE))
 qt3<- c(qt[1],0,qt[2:5])
 
 ### Map
-ggplot(cnty2.df3) + geom_sf(aes(fill=ec_factor_2020))+
-  scale_fill_stepsn(colors=policolor, breaks=qt3)+
+ggplot(cnty2.df3) + geom_sf(aes(fill=diff_2016))+
+  scale_fill_stepsn(colors=policolor, breaks=Brk)+
   labs(title = "County Vote Margin")+ scale_alpha(cnty2.df3$total_2020)
 
 
-##Map for County WIn
-ggplot(cnty2.df3)+
-  geom_sf(aes(fill=win2008_pct)+scale_alpha(total_2008))
+##Map for County Gradient
+ggplot(cnty2.df4)+
+  geom_sf(aes(fill=diff_2020_bin))+ scale_fill_gradient2(low="#2832c2", high = "#d21404", trans="log",breaks=c(-100000,-10000,-1000,-0,1000,10000,100000))
 
-                     
+ggplot(cnty2.df4)+
+  geom_sf(aes(fill=diff_2020_bin))+ scale_fill_gradient2(low="#2832c2", high = "#d21404", mid="#a86cc1")
+
+
+ggplot(cnty2.df4)+
+  geom_sf(aes(fill=diff_2020_bin))+scale_fill_gradient2(low="#2832c2", high = "#d21404", mid="#421c52", midpoint=0)+scale_fill_steps2(guide="bins", colors(10))
+
+summary(cnty2.df3$diff_2020)
+
+bp<-max(abs(cnty2.df4$diff_2020))
+Brk<-c((-bp*.25),0,(bp*.25))
+ggplot(cnty2.df4)+
+  geom_sf(aes(fill=diff_2020))+ scale_fill_gradient2(low="#2832c2", high = "#d21404",breaks=Brk)
+
+
+cntval<- -max(cnty2.df3$diff_2020)
+cnt<-dftotal%>%
+  select(diff_2020,state_name,county_name)%>%
+  filter(diff_2020<cntval)
+cntval
+summary(cnt)
+cnt[order(diff_2020)]
+save.image(file="votediff.jpeg")
+
+###Create Bin Column in Dataframe
+
+cnty2.df4<- cnty2.df3 %>%
+  mutate(diff_2020_bin= case_when(
+    diff_2020 >0 &diff_2020<1000~1,
+    diff_2020 >1000 &diff_2020<10000~1000,
+    diff_2020 >10000 &diff_2020<100000~10000,
+    diff_2020 >100000 ~100000,
+    diff_2020 <0 &diff_2020>-1000~-1,
+    diff_2020 <1000 &diff_2020>-10000~-1000,
+    diff_2020 <10000 &diff_2020>-100000~-10000,
+    diff_2020 <100000 ~-100000,
+    TRUE ~0
+         ))
+ggplot(cnty2.df4)+
+  geom_sf(aes(fill=diff_2020_bin))+scale_fill_gradient2(low="#2832c2", high = "#d21404", mid="#421c52", midpoint=0)+scale_fill_steps2(guide="bins", colors(10))
+
+
+ggplot(cnty2.df4)+
+  geom_sf(aes(fill=diff_2020_bin))+
+  scale_fill_gradient2(low="#2832c2", high = "#d21404",
+     labels=c(-100000,-10000,10000,100000),breaks=c(-100000,-10000,10000,100000))+
+  theme(panel.grid.major = element_line(colour = "transparent"))+ coord_sf(datum=NA)+
+  labs(title="2020 Vote Margin by County",fill="Vote Margin",x="",y="")+
+  theme(plot.background = element_blank(),panel.background = element_blank(),plot.title = element_text(hjust=0.5, size=16,face="bold"))
+   cnty2.df4 
+        
